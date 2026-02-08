@@ -1,0 +1,19 @@
+# Credentials & tokens
+config.json
+token.json
+cookies.txt
+
+# Working notes (contain personal data)
+notes/
+
+# Virtual environment
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
