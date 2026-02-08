@@ -31,7 +31,7 @@ Works with any MCP-compatible client, including:
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/docmost-mcp.git
+git clone https://github.com/aleksvin8888/local-docmost-mcp.git
 cd docmost-mcp
 ```
 
