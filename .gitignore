@@ -20,7 +20,3 @@ __pycache__/
 .idea/
 .vscode/
 
-# PR
-doc*/
-A*
-
