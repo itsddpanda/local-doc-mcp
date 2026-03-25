@@ -5,7 +5,6 @@ Handles authentication, token caching, and API requests.
 
 import json
 import os
-import fcntl
 from pathlib import Path
 from typing import Optional
 from datetime import datetime, timezone, timedelta
@@ -61,16 +60,12 @@ class DocmostClient:
             self.token_created_at = None
 
     def _save_token(self) -> None:
-        """Save token to token.json for reuse with file locking for thread safety."""
+        """Save token to token.json for reuse."""
         with open(self.token_path, "w", encoding="utf-8") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            try:
-                json.dump({
-                    "token": self.token,
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                }, f, indent=2)
-            finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            json.dump({
+                "token": self.token,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }, f, indent=2)
 
     def login(self) -> str:
         """
@@ -132,6 +127,10 @@ class DocmostClient:
         Automatically retries with fresh token on 401.
         """
         response = self._request_raw(method, endpoint, payload, retry_on_401)
+        
+        if response.status_code == 403:
+            raise ValueError("Permission denied: your account does not have access to perform this operation.")
+            
         response.raise_for_status()
         if response.status_code == 204 or not response.content:
             return {}
@@ -239,6 +238,8 @@ class DocmostClient:
                 if existing:
                     return {"space": existing, "already_exists": True}
             raise ValueError(f"Space already exists: {space_name}")
+        if response.status_code == 403:
+            raise ValueError("Permission denied: your account does not have write access to perform this operation.")
         if response.status_code == 400:
             raise ValueError(f"Invalid space data provided: {response.text}")
 
@@ -272,6 +273,8 @@ class DocmostClient:
         response = self._request_raw("POST", "/api/pages/create", payload)
         if response.status_code == 404:
             raise ValueError(f"Space/Page not found: {space_id}/{parent_page_id}")
+        if response.status_code == 403:
+            raise ValueError("Permission denied: your account does not have write access to perform this operation.")
         if response.status_code == 400:
             raise ValueError(f"Invalid request data: {response.text}")
 
@@ -310,6 +313,8 @@ class DocmostClient:
         response = self._request_raw("POST", "/api/pages/update", payload)
         if response.status_code == 404:
             raise ValueError(f"Page not found: {page_id}")
+        if response.status_code == 403:
+            raise ValueError("Permission denied: your account does not have write access to perform this operation.")
 
         response.raise_for_status()
         return response.json().get("data", response.json())
@@ -325,6 +330,8 @@ class DocmostClient:
         
         if response.status_code == 404:
             raise ValueError(f"Page not found: {page_id}")
+        if response.status_code == 403:
+            raise ValueError("Permission denied: your account does not have write access to perform this operation.")
 
         response.raise_for_status()
         result = response.json().get("data", response.json())
@@ -364,6 +371,8 @@ class DocmostClient:
         response = self._request_raw("POST", "/api/pages/move", payload)
         if response.status_code == 404:
             raise ValueError(f"Page not found: {page_id}")
+        if response.status_code == 403:
+            raise ValueError("Permission denied: your account does not have write access to perform this operation.")
         if response.status_code == 400:
             raise ValueError(f"Invalid move request: {response.text}")
 
@@ -384,6 +393,8 @@ class DocmostClient:
         response = self._request_raw("POST", "/api/pages/move-to-space", payload)
         if response.status_code == 404:
             raise ValueError(f"Page or space not found: {page_id} / {target_space_id}")
+        if response.status_code == 403:
+            raise ValueError("Permission denied: your account does not have write access to perform this operation.")
 
         response.raise_for_status()
         return response.json().get("data", response.json())
@@ -409,6 +420,8 @@ class DocmostClient:
         response = self._request_raw("POST", "/api/comments/create", payload)
         if response.status_code == 404:
             raise ValueError(f"Page not found: {page_id}")
+        if response.status_code == 403:
+            raise ValueError("Permission denied: your account does not have write access to perform this operation.")
         if response.status_code == 400:
             raise ValueError(f"Invalid comment data: {response.text}")
 
@@ -431,7 +444,7 @@ class DocmostClient:
         if response.status_code == 404:
             raise ValueError(f"Comment not found: {comment_id}")
         if response.status_code == 403:
-            raise ValueError("Not authorized to resolve this comment (requires EE).")
+            raise ValueError("Permission denied: your account does not have write access to perform this operation. (Note: Resolving comments may also require Enterprise Edition)")
 
         response.raise_for_status()
         return response.json().get("data", response.json())

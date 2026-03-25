@@ -13,9 +13,10 @@ def mock_config():
 
 @pytest.fixture
 def mock_token_data():
+    # Use a date that is definitely not expired (far in the future or current)
     return {
         "token": "fake-jwt-token",
-        "created_at": "2026-03-22T00:00:00Z"
+        "created_at": "2026-12-31T23:59:59Z"
     }
 
 @pytest.fixture
@@ -32,8 +33,7 @@ def mock_client(mock_config, mock_token_data):
         return mock_open()(filename, *args, **kwargs)
         
     with patch("pathlib.Path.exists", return_value=True), \
-         patch("builtins.open", side_effect=side_effect_open), \
-         patch("fcntl.flock"):
+         patch("builtins.open", side_effect=side_effect_open):
          
         from docmost_client import DocmostClient
         client = DocmostClient()

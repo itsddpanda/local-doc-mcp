@@ -317,6 +317,19 @@ def test_resolve_comment(mock_client, mock_config):
     result = mock_client.resolve_comment("cmt1", "Fixed it")
     assert result["resolved"] is True
 
+@responses.activate
+def test_request_forbidden(mock_client, mock_config):
+    # Mock a 403 Forbidden response
+    responses.add(
+        responses.POST,
+        f"{mock_config['base_url']}/api/pages/create",
+        status=403
+    )
+    
+    # Verify my custom error message is raised
+    with pytest.raises(ValueError, match="Permission denied: your account does not have write access"):
+        mock_client.create_page("space1", "Title")
+
 def test_prosemirror_to_markdown():
     client = DocmostClient()
     content = {

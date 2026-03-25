@@ -22,3 +22,5 @@ __pycache__/
 
 #local test file
 .coverage
+*.md
+!Readme.md
