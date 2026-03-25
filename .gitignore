@@ -1,5 +1,5 @@
 # Credentials & tokens
-config.json
+config.json*
 token.json
 cookies.txt
 
@@ -7,7 +7,9 @@ cookies.txt
 notes/
 
 # Virtual environment
-venv/
+.venv/
+.*/
+!.github
 
 # Python
 __pycache__/
@@ -17,3 +19,8 @@ __pycache__/
 # IDE
 .idea/
 .vscode/
+
+#local test file
+.coverage
+*.md
+!Readme.md

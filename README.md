@@ -19,6 +19,14 @@ Works with any MCP-compatible client, including:
 | **list_spaces** | List all available documentation spaces with names, slugs, and IDs |
 | **search_docs** | Full-text search across all documentation, with optional space filtering |
 | **get_page** | Retrieve full page content converted from ProseMirror JSON to Markdown |
+| **create_space** | Create a new space with optional idempotent behavior |
+| **create_page** | Create a page in a space (Markdown content) |
+| **update_page** | Update page title/content (replace/append/prepend modes) |
+| **duplicate_page** | Duplicate a page recursively |
+| **move_page** | Move a page within a space or hierarchy |
+| **move_page_to_space** | Move a page to another space |
+| **create_comment** | Create a page comment (Markdown converted to ProseMirror) |
+| **resolve_comment** | Resolve a comment with an optional note |
 
 ## Prerequisites
 
@@ -45,11 +53,22 @@ source venv/bin/activate   # Linux / macOS
 pip install -r requirements.txt
 ```
 
-This installs two dependencies:
+This installs the core dependencies:
 - [`mcp`](https://pypi.org/project/mcp/) — official Python SDK for building MCP servers
 - [`requests`](https://pypi.org/project/requests/) — HTTP client for Docmost API calls
 
-### 3. Configure credentials
+### 3. Local Development with Docker (Optional)
+
+If you need a local Docmost instance for testing, you can use the provided Docker Compose setup:
+
+```bash
+cd container_docmost
+docker compose up -d
+```
+
+This starts Docmost on `http://localhost:3000` (port `3001` if configured in host mapping) along with Postgres and Redis.
+
+### 4. Configure credentials
 
 Copy the example config and fill in your details:
 
@@ -64,7 +83,11 @@ Edit `config.json`:
   "base_url": "https://your-docmost-instance.example.com",
   "email": "your-email@example.com",
   "password": "your-password",
-  "timeout": 30
+  "timeout": 30,
+  "page_content_format": "markdown",
+  "create_space_conflict_policy": "return_existing",
+  "duplicate_page_conflict_policy": "auto_suffix",
+  "clear_parent_on_space_move": true
 }
 ```
 
@@ -74,6 +97,10 @@ Edit `config.json`:
 | `email` | Email address for Docmost authentication |
 | `password` | Password for Docmost authentication |
 | `timeout` | HTTP request timeout in seconds |
+| `page_content_format` | Page content format for create/update (default: `markdown`) |
+| `create_space_conflict_policy` | `return_existing` or `error` on space name conflict |
+| `duplicate_page_conflict_policy` | `auto_suffix` or `error` on title conflict |
+| `clear_parent_on_space_move` | Clear parent when moving to another space (default: true) |
 
 > **Note:** `config.json` contains sensitive credentials and is excluded from version control via `.gitignore`.
 
@@ -209,6 +236,49 @@ Find "API endpoints" in the Engineering space
 Show me the full content of page with slug_id "abc123def"
 ```
 
+### Create a new space
+
+```
+Create a space named "Project Phoenix" with description "Q2 launch docs"
+```
+
+### Create a page
+
+```
+Create a page in space "SPACE_ID" titled "Kickoff Notes" with content "# Kickoff\n..."
+```
+
+### Update a page (append)
+
+```
+Append "## Decisions\n- ..." to page "PAGE_ID"
+```
+
+### Move a page
+
+```
+Move page "PAGE_ID" under parent "PARENT_ID" and set position "after:SIBLING_ID"
+```
+
+> **Note:** `move_page` passes position hints through to the Docmost API. If your Docmost version requires fractional indices, you may need to adjust the API payload or client logic.
+
+### Comment and resolve
+
+```
+Add a comment to page "PAGE_ID": "Please review this section."
+Resolve comment "COMMENT_ID" with note "Addressed in revision 3."
+```
+
+## Write tool error handling
+
+- `create_space`: 409 conflicts return a clear error or the existing space (see `create_space_conflict_policy`).
+- `create_page`: 404 for invalid `space_id`, 400 for invalid `parent_page_id`.
+- `update_page`: 404 when page is missing; append/prepend requires `content`.
+- `duplicate_page`: 404 when source page is missing; conflict handling depends on `duplicate_page_conflict_policy`.
+- `move_page`: requires `new_parent_page_id` or `new_position`; rejects circular moves; invalid positions return 400.
+- `create_comment`: 404 when page is missing; 401 if not authorized.
+- `resolve_comment`: 404 when comment is missing; 403 if not authorized.
+
 ## How it works
 
 1. The MCP client launches the server as a subprocess and communicates via **stdio** (stdin/stdout).
@@ -220,14 +290,44 @@ Show me the full content of page with slug_id "abc123def"
 
 ```
 docmost-mcp/
-├── mcp_server.py         # MCP server (3 tools)
+├── .github/workflows/    # CI/CD pipelines (GitHub Actions)
+├── container_docmost/    # Docker Compose setup for local testing
+├── tests/                # Comprehensive unit test suite
+├── mcp_server.py         # MCP server (11 tools)
 ├── docmost_client.py     # Docmost API client
-├── requirements.txt      # Python dependencies (mcp, requests)
+├── requirements.txt      # Python dependencies
 ├── config.example.json   # Configuration template
 ├── config.json           # Your credentials (not in git)
-├── token.json            # Cached JWT token (auto-generated, not in git)
+├── token.json            # Cached JWT token (auto-generated)
 ├── .gitignore
 └── README.md
+```
+
+## Testing & CI/CD
+
+The project includes a comprehensive test suite covering both the API client and the MCP server handlers.
+
+### Running tests locally
+
+```bash
+# Install test dependencies
+pip install pytest pytest-asyncio responses coverage pytest-cov
+
+# Run all tests
+PYTHONPATH=. pytest tests/ -v
+
+# Run tests with coverage report
+PYTHONPATH=. pytest tests/ --cov=. --cov-report=term-missing
+```
+
+### CI/CD
+
+GitHub Actions are configured in `.github/workflows/ci.yml` to automatically run tests on every push and pull request across multiple Python versions (3.10, 3.11, 3.12).
+
+You can simulate the CI environment locally using [act](https://github.com/nektos/act):
+
+```bash
+act push -W .github/workflows/ci.yml
 ```
 
 ## Security
