@@ -31,6 +31,11 @@ class DocmostClient:
         self.config = self._load_config()
         self.base_url = self.config["base_url"].rstrip("/")
         self.timeout = self.config.get("timeout", 30)
+        # Credentials (renamed to admin_email/admin_password). Fall back to legacy email/password if present.
+        self.admin_email = self.config.get("admin_email") or self.config.get("email")
+        self.admin_password = self.config.get("admin_password") or self.config.get("password")
+        if not self.admin_email or not self.admin_password:
+            raise ValueError("Config must include admin_email and admin_password (or legacy email/password).")
         self.token: Optional[str] = None
         self.token_created_at: Optional[datetime] = None
         self._lock = threading.Lock()
@@ -74,8 +79,8 @@ class DocmostClient:
         """
         url = f"{self.base_url}/api/auth/login"
         payload = {
-            "email": self.config["email"],
-            "password": self.config["password"]
+            "email": self.admin_email,
+            "password": self.admin_password
         }
 
         response = requests.post(
@@ -448,6 +453,61 @@ class DocmostClient:
 
         response.raise_for_status()
         return response.json().get("data", response.json())
+
+    def add_user(
+        self,
+        email: str,
+        name: str,
+        password: str,
+        role: str = "member",
+        group_ids: Optional[list[str]] = None
+    ) -> dict:
+        """Add a user by creating an invite and self-accepting it (self-hosted flow)."""
+        email = self._require_string(email, "email")
+        name = self._require_string(name, "name")
+        password = self._require_string(password, "password")
+        role = (role or "member").strip().lower()
+        if role not in {"member", "admin"}:
+            raise ValueError("role must be 'member' or 'admin'")
+
+        # Step 1: create invite
+        payload_invite: dict = {
+            "emails": [email],
+            "role": role,
+            "groupIds": group_ids or []
+        }
+        res_invite = self._request("POST", "/api/workspace/invites/create", payload_invite)
+
+        # Step 2: find invite id
+        res_list = self._request("POST", "/api/workspace/invites", {"query": email, "limit": 1})
+        inv_id = _get_nested(res_list, ["data", "items"], [])
+        inv_id = inv_id[0].get("id") if inv_id else None
+        if not inv_id:
+            raise ValueError("Invite not found after creation; user may already exist or invite filtered out")
+
+        # Step 3: get invite link (self-host)
+        res_link = self._request("POST", "/api/workspace/invites/link", {"invitationId": inv_id})
+        invite_link = _get_nested(res_link, ["data", "inviteLink"], "")
+        if not invite_link or "token=" not in invite_link:
+            raise ValueError("Invite link not returned (cloud instances may forbid link retrieval)")
+        token = invite_link.split("token=", 1)[1]
+
+        # Step 4: accept invite (creates user)
+        payload_accept = {
+            "invitationId": inv_id,
+            "token": token,
+            "name": name,
+            "password": password
+        }
+        res_accept = self._request("POST", "/api/workspace/invites/accept", payload_accept)
+        return {
+            "invite": res_invite,
+            "accept": res_accept,
+            "invitationId": inv_id,
+            "email": email,
+            "role": role,
+            "group_ids": group_ids or []
+        }
 
     def prosemirror_to_markdown(self, content: dict) -> str:
         """
